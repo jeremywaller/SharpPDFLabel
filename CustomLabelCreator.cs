@@ -46,7 +46,7 @@ namespace SharpPDFLabel
         /// Ensure you have added something first using either AddImage() or AddText()
         /// </summary>
         /// <returns></returns>
-        public Stream CreatePDF()
+        public Stream CreatePDF(int startingPosition = 0)
         {
 
             //Get the itext page size
@@ -85,7 +85,6 @@ namespace SharpPDFLabel
 
             //Create a new table with label and gap columns
             var numOfCols = _labelDefinition.LabelsPerRow + (_labelDefinition.LabelsPerRow - 1);
-           // var tbl = new PdfPTable(numOfCols);
 
             //Build the column width array, even numbered index columns will be gap columns
             var colWidths = new List<float>();
@@ -111,12 +110,11 @@ namespace SharpPDFLabel
 
 
             // loop over the labels
-
             var rowNumber = 0;
             var colNumber = 0;
 
-
             PdfPTable tbl = null;
+            var setupComplete = false;
             foreach (var label in _labels)
             {
                 if (rowNumber == 0)
@@ -128,6 +126,21 @@ namespace SharpPDFLabel
                 }
                 colNumber++; // so we start with col 1
 
+                if (!setupComplete)
+                {
+                    // add empty cells to set up a partial sheet
+                    for (int i = 1; i < startingPosition; i++)
+                    {
+                        tbl.AddCell(CreateEmptyLabelCell());
+                        colNumber = HandleColumnGap(colNumber, numOfCols, tbl);
+                        HandleRowGap(colNumber, numOfCols, rowNumber, tbl);
+                        colNumber = HandleRowCompletion(colNumber, numOfCols, tbl, ref rowNumber);
+                        colNumber++;
+                    }
+
+                    setupComplete = true;
+                }
+
                 // add the label cell.
                 var cell = FormatCell(label.GetLabelCell());
 
@@ -135,28 +148,12 @@ namespace SharpPDFLabel
                 tbl.AddCell(cell);
 
                 //Create a empty cell to use as a gap
-                if (colNumber < numOfCols)
-                {
-                    tbl.AddCell(CreateGapCell());
-                    colNumber++; // increment for the gap row
-                }
+                colNumber = HandleColumnGap(colNumber, numOfCols, tbl);
 
                 //On all but the last row, after the last column, add a gap row if needed
-                if (colNumber == numOfCols && ((rowNumber) < _labelDefinition.LabelRowsPerPage && _labelDefinition.VerticalGapHeight > 0))
-                {
-                    tbl.Rows.Add(CreateGapRow(numOfCols));
-                }
+                HandleRowGap(colNumber, numOfCols, rowNumber, tbl);
 
-
-                if (colNumber == numOfCols)
-                {
-                    // add the row to the table and re-initialize
-                    tbl.CompleteRow();
-
-                    rowNumber++;
-                    colNumber = 0;
-                }
-
+                colNumber = HandleRowCompletion(colNumber, numOfCols, tbl, ref rowNumber);
                 
                 if (rowNumber > _labelDefinition.LabelRowsPerPage)
                 {
@@ -203,6 +200,40 @@ namespace SharpPDFLabel
 
             return output;
 
+        }
+
+        private static int HandleRowCompletion(int colNumber, int numOfCols, PdfPTable tbl, ref int rowNumber)
+        {
+            if (colNumber == numOfCols)
+            {
+                // add the row to the table and re-initialize
+                tbl.CompleteRow();
+
+                rowNumber++;
+                colNumber = 0;
+            }
+
+            return colNumber;
+        }
+
+        private void HandleRowGap(int colNumber, int numOfCols, int rowNumber, PdfPTable tbl)
+        {
+            if (colNumber == numOfCols &&
+                ((rowNumber) < _labelDefinition.LabelRowsPerPage && _labelDefinition.VerticalGapHeight > 0))
+            {
+                tbl.Rows.Add(CreateGapRow(numOfCols));
+            }
+        }
+
+        private int HandleColumnGap(int colNumber, int numOfCols, PdfPTable tbl)
+        {
+            if (colNumber < numOfCols)
+            {
+                tbl.AddCell(CreateGapCell());
+                colNumber++; // increment for the gap row
+            }
+
+            return colNumber;
         }
 
         private PdfPCell CreateEmptyLabelCell()
